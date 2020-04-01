@@ -1,6 +1,6 @@
 ; If you are using scheme instead of racket, comment these two lines, uncomment the (load "simpleParser.scm") and comment the (require "simpleParser.rkt")
 #lang racket
-(require "simpleParser.rkt")
+(require "functionParser.rkt")
 ; (load "simpleParser.scm")
 
 
@@ -130,6 +130,17 @@
          (interpret-block finally-block
                           (interpret-block try-block environment new-return new-break new-continue new-throw)
                           return break continue throw))))))
+
+; To interpret a function and add it to the environment
+(define interpret-function
+  (lambda (statement environment return break continue throw)
+    (cond
+      ((null? (func-body statement)) environment) ;checks if the function body is empty
+      (else (insert (func-name statement) (func-body statement) environment))))) ;checks if there are any parameters
+
+(define func-name car)
+(define func-body cdr)
+(define statement-list-of-function cadr)
 
 ; helper methods so that I can reuse the interpret-block method on the try and finally blocks
 (define make-try-block
