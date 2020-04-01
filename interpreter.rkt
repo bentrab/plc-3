@@ -40,9 +40,9 @@
 (define interpret-statement
   (lambda (statement environment return break continue throw)
     (cond
-      ((eq? 'return (statement-type statement)) (interpret-return statement environment return))
-      ((eq? 'var (statement-type statement)) (interpret-declare statement environment))
-      ((eq? '= (statement-type statement)) (interpret-assign statement environment))
+      ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw))
+      ((eq? 'var (statement-type statement)) (interpret-declare statement environment return break continue throw))
+      ((eq? '= (statement-type statement)) (interpret-assign statement environment throw))
       ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
       ((eq? 'while (statement-type statement)) (interpret-while statement environment return throw))
       ((eq? 'continue (statement-type statement)) (continue environment))
@@ -50,12 +50,19 @@
       ((eq? 'begin (statement-type statement)) (interpret-block statement environment return break continue throw))
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
+      ((eq? 'function (statement-type statement)) (interpret-function (statement-without-func statement) environment return break continue throw))
+       ((eq? 'funcall (statement-type statement)) (interpret-funcall-result-environment (statement-list-from-function (lookup (function-name (statement-without-funcall statement)) environment)) (add-parameters-to-environment (get-parameters (lookup (function-name (statement-without-funcall statement)) environment)) (parameters (statement-without-funcall statement)) (push-frame environment) throw)
+                                                                                       return
+                                                                                       break continue throw))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment return)
     (return (eval-expression (get-expr statement) environment))))
+	
+(define statement-without-func cdr)	
+(define statement-without-funcall statement-without-func)
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -157,7 +164,7 @@
         ((null? statement-list) (pop-frame environment)) 
         (else (interpret-function-statement-list (rest-of statement-list) (interpret-statement (first statement-list) environment return break continue throw) return break continue throw)))))
 
-; evaluates a funcall. Funcall here is for example (amethod 1 2 3) or (bmethod)
+; evaluates a funcall and returns its return value
 (define interpret-funcall
   (lambda (funcall environment throw)
     (call/cc
@@ -168,6 +175,19 @@
          ((null? (parameters funcall)) (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (push-frame (pop-frame environment)) func-return breakOutsideLoopError continueOutsideLoopError throw)) ; checks if there are parameters
          (else (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (add-parameters-to-environment (func-name (lookup (function-name funcall) environment)) (parameters funcall) (push-frame environment) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)))))))
 
+; evealuates a function call and returns its associated environment
+(define interpret-funcall-result-environment
+ (lambda (statement-list environment return break continue throw)
+  (cond
+    ((null? statement-list) environment)
+    (else (if (list? (call/cc
+                      (lambda (breakreturn)
+                        (interpret-statement (first-statement statement-list) environment breakreturn break continue throw))))
+                  (interpret-funcall-result-environment (rest-of-statement-list statement-list) (call/cc
+                                                                              (lambda (breakreturn)
+                                                                                (interpret-statement (first-statement statement-list) environment breakreturn break continue throw)))
+                                                        return break continue throw)
+                  environment)))))
 (define function-name car)
 (define parameters cdr)
 (define first car)
