@@ -10,6 +10,14 @@
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
+(define breakOutsideLoopError
+  (lambda (env) (myerror "Break used outside loop")))
+
+(define continueOutsideLoopError
+  (lambda (env) (myerror "Continue used outside of loop")))
+
+(define uncaughtExceptionThrownError
+  (lambda (v env) (myerror "Uncaught exception thrown")))
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
@@ -141,6 +149,47 @@
 (define func-name car)
 (define func-body cdr)
 (define statement-list-of-function cadr)
+
+; The same as interpret-statement-list except at the end it returns the environment
+(define interpret-function-statement-list
+  (lambda (statement-list environment return break continue throw)
+    (cond 
+        ((null? statement-list) (pop-frame environment)) 
+        (else (interpret-function-statement-list (rest-of statement-list) (interpret-statement (first statement-list) environment return break continue throw) return break continue throw)))))
+
+; evaluates a funcall. Funcall here is for example (amethod 1 2 3) or (bmethod)
+(define interpret-funcall
+  (lambda (funcall environment throw)
+    (call/cc
+     (lambda (func-return)
+       (cond
+         ; dont think we need this line((list? (car funcall)) (interpret-function-statement-list (funcall-closure (get-funcall-closure (funcall-dot-operator funcall) environment)) (add-parameters-to-environment (get-parameters (get-funcall-closure (funcall-dot-operator funcall) environment)) (parameters funcall) (push-frame (append (lookup (instance-name-to-append funcall) environment) environment)) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)) ;checks if the funcall is a dot function
+         ((not (exists? (function-name funcall) environment)) (myerror "Function does not exist")) ;checks if the function exists
+         ((null? (parameters funcall)) (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (push-frame (pop-frame environment)) func-return breakOutsideLoopError continueOutsideLoopError throw)) ; checks if there are parameters
+         (else (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (add-parameters-to-environment (func-name (lookup (function-name funcall) environment)) (parameters funcall) (push-frame environment) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)))))))
+
+(define function-name car)
+(define parameters cdr)
+(define first car)
+(define rest-of cdr)
+(define funcall-closure cadr)
+(define instance-name-to-append cadar)
+(define funcall-to-look-up caddr)
+(define instance-name-to-look-up cadr)
+
+; Returns the closure of the funcall by looking up the funcall in the value of the instance field 
+(define get-funcall-closure
+  (lambda (dot-funcall environment)
+    (lookup (funcall-to-look-up dot-funcall) (lookup (instance-name-to-look-up dot-funcall) environment))))
+
+(define add-parameters-to-environment
+  (lambda (param-names param-values environment throw)
+    (cond
+      ((null? param-names) environment)
+      ((not (eq? (length param-names) (length param-values))) (myerror "Mismatching parameters and arguments"))
+      ((list? param-names) (add-parameters-to-environment (parameters param-names) (parameters param-values) (insert (first param-names) (eval-expression (first param-values) (pop-frame environment) throw) environment) throw))
+      (else (insert param-names (eval-expression param-values (pop-frame environment)) environment)))))
+
 
 ; helper methods so that I can reuse the interpret-block method on the try and finally blocks
 (define make-try-block
