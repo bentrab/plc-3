@@ -33,7 +33,7 @@
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
     (if (null? statement-list)
-        environment
+        (evaluate-main-function environment return break continue throw)
         (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
@@ -173,7 +173,6 @@
     (call/cc
      (lambda (func-return)
        (cond
-         ; dont think we need this line((list? (car funcall)) (interpret-function-statement-list (funcall-closure (get-funcall-closure (funcall-dot-operator funcall) environment)) (add-parameters-to-environment (func-params (get-funcall-closure (funcall-dot-operator funcall) environment)) (parameters funcall) (push-frame (append (lookup (instance-name-to-append funcall) environment) environment)) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)) ;checks if the funcall is a dot function
          ((not (exists? (function-name funcall) environment)) (myerror "Function does not exist")) ;checks if the function exists
          ((null? (parameters funcall)) (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (push-frame (pop-frame environment)) func-return breakOutsideLoopError continueOutsideLoopError throw)) ; checks if there are parameters
          (else (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (add-parameters-to-environment (func-name (lookup (function-name funcall) environment)) (parameters funcall) (push-frame environment) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)))))))
@@ -191,6 +190,19 @@
                                                                                 (interpret-statement (first-statement statement-list) environment breakreturn break continue throw)))
                                                         return break continue throw)
                   environment)))))
+
+;evaluates the main function
+(define evaluate-main-function
+  (lambda (environment return break continue throw)
+      (interpret-statement-list (statement-list-of-function (find-function-in-closure environment 'main)))))
+
+; Looks up the function closure in the environment
+(define find-function-in-closure
+  (lambda (environment func-name)
+    (cond
+        ((eq? func-name (cadar environment)) (cddar environment))
+        (else (find-function-in-closure (cdr environment) func-name)))))
+
 (define function-name car)
 (define parameters cdr)
 (define first car)
@@ -203,7 +215,7 @@
 (define first-statement car)
 
 
-; Returns the closure of the funcall by looking up the funcall in the value of the instance field 
+; Returns the closure of the funcall by looking up the funcall
 (define get-funcall-closure
   (lambda (dot-funcall environment)
     (lookup (funcall-to-look-up dot-funcall) (lookup (instance-name-to-look-up dot-funcall) environment))))
