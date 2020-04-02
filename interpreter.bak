@@ -10,13 +10,15 @@
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
-;====================================================================================================================================================================================== v
 (define breakOutsideLoopError
   (lambda (env) (myerror "Break used outside loop")))
 
 (define continueOutsideLoopError
   (lambda (env) (myerror "Continue used outside of loop")))
-;====================================================================================================================================================================================== ^
+
+(define uncaughtExceptionThrownError
+  (lambda (v env) (myerror "Uncaught exception thrown")))
+
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
@@ -31,7 +33,7 @@
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
     (if (null? statement-list)
-        (evaluate-main-function environment return break continue throw) ;================================================================================================================= <
+        (evaluate-main-function environment return break continue throw)
         (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
@@ -48,21 +50,20 @@
       ((eq? 'begin (statement-type statement)) (interpret-block statement environment return break continue throw))
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
-      ;=============================================================================================================================================================================================== v
-      ((eq? 'function (statement-type statement)) (interpret-function (statement-without-function statement) environment return break continue throw))
-      ((eq? 'function-call (statement-type statement)) (interpret-function-call-result-environment (statement-list-from-function (lookup (funcname (statement-without-function-call statement)) environment)) (add-parameters-to-environment (func-params (lookup (funcname (statement-without-function-call statement)) environment)) (params (statement-without-function-call statement)) (push-frame environment) throw)
+      ((eq? 'function (statement-type statement)) (interpret-function (statement-without-func statement) environment return break continue throw))
+      ((eq? 'funcall (statement-type statement)) (interpret-funcall-result-environment (statement-list-from-function (lookup (function-name (statement-without-funcall statement)) environment)) (add-parameters-to-environment (func-params (lookup (function-name (statement-without-funcall statement)) environment)) (parameters (statement-without-funcall statement)) (push-frame environment) throw)
                                                                                        return
                                                                                        break continue throw))
       (else (myerror "Unknown statement:" (statement-type statement))))))
-      ;=============================================================================================================================================================================================== ^
+
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment return throw)
     (return (eval-expression (get-expr statement) environment throw))))
-;===================================================================================================================================== v
-(define statement-without-function cdr)	
-(define statement-without-function-call statement-without-function)
-;===================================================================================================================================== ^
+	
+(define statement-without-func cdr)	
+(define statement-without-funcall statement-without-func)
+
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
   (lambda (statement environment return break continue throw)
@@ -145,10 +146,6 @@
          (interpret-block finally-block
                           (interpret-block try-block environment new-return new-break new-continue new-throw)
                           return break continue throw))))))
-;=============================================================================================================================================================================================v
-
-(define funcname car)
-(define params cdr)
 
 ; To interpret a function and add it to the environment
 (define interpret-function
@@ -168,29 +165,29 @@
   (lambda (statement-list environment return break continue throw)
     (cond 
         ((null? statement-list) (pop-frame environment)) 
-        (else (interpret-function-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw)))))
+        (else (interpret-function-statement-list (rest-of statement-list) (interpret-statement (first statement-list) environment return break continue throw) return break continue throw)))))
 
-; evaluates a funtion-call and returns its return value
-(define interpret-function-call
-  (lambda (function-call environment throw)
+; evaluates a funcall and returns its return value
+(define interpret-funcall
+  (lambda (funcall environment throw)
     (call/cc
      (lambda (func-return)
        (cond
-         ((not (exists? (funcname function-call) environment)) (myerror "Function does not exist")) ;checks if the function exists
-         ((null? (params function-call)) (interpret-function-statement-list (statement-list-of-function (lookup (funcname function-call) environment)) (push-frame (pop-frame environment)) func-return breakOutsideLoopError continueOutsideLoopError throw)) ; checks if there are parameters
-         (else (interpret-function-statement-list (statement-list-of-function (lookup (funcname function-call) environment)) (add-parameters-to-environment (func-name (lookup (funcname function-call) environment)) (params function-call) (push-frame environment) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)))))))
+         ((not (exists? (function-name funcall) environment)) (myerror "Function does not exist")) ;checks if the function exists
+         ((null? (parameters funcall)) (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (push-frame (pop-frame environment)) func-return breakOutsideLoopError continueOutsideLoopError throw)) ; checks if there are parameters
+         (else (interpret-function-statement-list (statement-list-of-function (lookup (function-name funcall) environment)) (add-parameters-to-environment (func-name (lookup (function-name funcall) environment)) (parameters funcall) (push-frame environment) throw) func-return breakOutsideLoopError continueOutsideLoopError throw)))))))
 
 ; evealuates a function call and returns its associated environment
-(define interpret-function-call-result-environment
+(define interpret-funcall-result-environment
  (lambda (statement-list environment return break continue throw)
   (cond
     ((null? statement-list) environment)
     (else (if (list? (call/cc
                       (lambda (breakreturn)
-                        (interpret-statement (car statement-list) environment breakreturn break continue throw))))
-                  (interpret-function-call-result-environment (cdr statement-list) (call/cc
+                        (interpret-statement (first-statement statement-list) environment breakreturn break continue throw))))
+                  (interpret-funcall-result-environment (rest-of-statement-list statement-list) (call/cc
                                                                               (lambda (breakreturn)
-                                                                                (interpret-statement (car statement-list) environment breakreturn break continue throw)))
+                                                                                (interpret-statement (first-statement statement-list) environment breakreturn break continue throw)))
                                                         return break continue throw)
                   environment)))))
 
@@ -206,17 +203,26 @@
         ((eq? func-name (cadar environment)) (cddar environment))
         (else (find-function-in-closure (cdr environment) func-name)))))
 
-
+(define function-name car)
+(define parameters cdr)
+(define first car)
+(define rest-of cdr)
+(define funcall-closure cadr)
+(define instance-name-to-append cadar)
+(define funcall-to-look-up caddr)
+(define instance-name-to-look-up cadr)
+(define rest-of-statement-list cdr)
+(define first-statement car)
 
 (define add-parameters-to-environment
   (lambda (param-names param-values environment throw)
     (cond
       ((null? param-names) environment)
       ((not (eq? (length param-names) (length param-values))) (myerror "Mismatching parameters and arguments"))
-      ((list? param-names) (add-parameters-to-environment (params param-names) (params param-values) (insert (car param-names) (eval-expression (car param-values) (pop-frame environment) throw) environment) throw))
+      ((list? param-names) (add-parameters-to-environment (parameters param-names) (parameters param-values) (insert (first param-names) (eval-expression (first param-values) (pop-frame environment) throw) environment) throw))
       (else (insert param-names (eval-expression param-values (pop-frame environment) throw) environment)))))
 
-;=============================================================================================================================================================================================== ^
+
 ; helper methods so that I can reuse the interpret-block method on the try and finally blocks
 (define make-try-block
   (lambda (try-statement)
