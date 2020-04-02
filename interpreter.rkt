@@ -10,13 +10,15 @@
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
-;====================================================================================================================================================================================== v
+
 (define breakOutsideLoopError
   (lambda (env) (myerror "Break used outside loop")))
 
 (define continueOutsideLoopError
   (lambda (env) (myerror "Continue used outside of loop")))
-;====================================================================================================================================================================================== ^
+
+(define functionless cdr)
+
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
@@ -31,7 +33,7 @@
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
     (if (null? statement-list)
-        (evaluate-main-function environment return break continue throw) ;================================================================================================================= <
+        (evaluate-main-function environment return break continue throw)
         (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
@@ -49,20 +51,17 @@
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
       ;=============================================================================================================================================================================================== v
-      ((eq? 'function (statement-type statement)) (interpret-function (statement-without-function statement) environment return break continue throw))
-      ((eq? 'function-call (statement-type statement)) (interpret-function-call-result-environment (statement-list-from-function (lookup (funcname (statement-without-function-call statement)) environment)) (add-parameters-to-environment (func-params (lookup (funcname (statement-without-function-call statement)) environment)) (params (statement-without-function-call statement)) (push-frame environment) throw)
+      ((eq? 'function (statement-type statement)) (interpret-function (functionless statement) environment return break continue throw))
+      ((eq? 'function-call (statement-type statement)) (interpret-function-call-result-environment (statement-list-from-function (lookup (funcname (functionless statement)) environment)) (add-parameters-to-environment (func-params (lookup (funcname (functionless statement)) environment)) (params (functionless statement)) (push-frame environment) throw)
                                                                                        return
                                                                                        break continue throw))
-      (else (myerror "Unknown statement:" (statement-type statement))))))
+      (else (myerror "Invalid: " (statement-type statement))))))
       ;=============================================================================================================================================================================================== ^
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment return throw)
     (return (eval-expression (get-expr statement) environment throw))))
-;===================================================================================================================================== v
-(define statement-without-function cdr)	
-(define statement-without-function-call statement-without-function)
-;===================================================================================================================================== ^
+
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
   (lambda (statement environment return break continue throw)
