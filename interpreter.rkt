@@ -214,12 +214,6 @@
 (define rest-of-statement-list cdr)
 (define first-statement car)
 
-
-; Returns the closure of the funcall by looking up the funcall
-(define get-funcall-closure
-  (lambda (dot-funcall environment)
-    (lookup (funcall-to-look-up dot-funcall) (lookup (instance-name-to-look-up dot-funcall) environment))))
-
 (define add-parameters-to-environment
   (lambda (param-names param-values environment throw)
     (cond
